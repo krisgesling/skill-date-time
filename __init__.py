@@ -426,6 +426,7 @@ class TimeSkill(MycroftSkill):
         if response_type is "simple":
             self.speak_dialog("date", {"date": speak_date})
         elif response_type is "relative":
+            # remove time data to get clean dates
             day_date = day.replace(hour=0, minute=0, second=0, microsecond=0)
             today_date = today.replace(hour=0, minute=0, second=0, microsecond=0)
             num_days = (day_date - today_date).days
@@ -433,6 +434,7 @@ class TimeSkill(MycroftSkill):
                 speak_num_days = nice_duration(num_days * 86400)
                 self.speak_dialog("date.relative.future", {"date": speak_date, "num_days": speak_num_days})
             else:
+                # if in the past, make positive before getting duration
                 speak_num_days = nice_duration(num_days * -86400)
                 self.speak_dialog("date.relative.past", {"date": speak_date, "num_days": speak_num_days})
 
