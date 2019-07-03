@@ -31,6 +31,7 @@ from mycroft.util.parse import extract_datetime, fuzzy_match, extract_number, no
 from mycroft.util.time import now_utc, default_timezone, to_local
 from mycroft.skills.core import resting_screen_handler
 
+from .geonames import GeonamesClient
 
 class TimeSkill(MycroftSkill):
 
@@ -40,6 +41,7 @@ class TimeSkill(MycroftSkill):
         self.displayed_time = None
         self.display_tz = None
         self.answering_query = False
+        self.geoname = GeonamesClient('demo') # add your own API username
 
     def initialize(self):
         # Start a callback that repeats every 10 seconds
@@ -83,60 +85,43 @@ class TimeSkill(MycroftSkill):
         return self.config_core.get('time_format') == 'full'
 
     def get_timezone(self, locale):
+        self.log.debug('get_timezone: Initial Locale: ' + str(locale))
         try:
-            # This handles common city names, like "Dallas" or "Paris"
-            return pytz.timezone(self.astral[locale].timezone)
+            # This handles codes like "America/Los_Angeles"
+            self.log.debug('get_timezone: Final Timezone from PyTZ: ' + str(pytz.timezone(locale)))
+            return (pytz.timezone(locale), locale)
         except:
             pass
 
         try:
-            # This handles codes like "America/Los_Angeles"
-            return pytz.timezone(locale)
+            # This handles common city names, like "Dallas" or "Paris"
+            self.log.debug('get_timezone: Final Timezone from Astral: ' + str(self.astral[locale].timezone))
+            return (pytz.timezone(self.astral[locale].timezone), locale)
         except:
             pass
 
         # Check lookup table for other timezones.  This can also
         # be a translation layer.
         # E.g. "china = GMT+8"
+
         timezones = self.translate_namedvalues("timezone.value")
         for timezone in timezones:
             if locale.lower() == timezone.lower():
                 # assumes translation is correct
-                return pytz.timezone(timezones[timezone].strip())
+                self.log.debug('get_timezone: Final Timezone from Timezone Values: ' + timezones[timezone].strip())
+                return (pytz.timezone(timezones[timezone].strip()), locale)
 
-        # Now we gotta get a little fuzzy
-        # Look at the pytz list of all timezones. It consists of
-        # Location/Name pairs.  For example:
-        # ["Africa/Abidjan", "Africa/Accra", ... "America/Denver", ...
-        #  "America/New_York", ..., "America/North_Dakota/Center", ...
-        #  "Cuba", ..., "EST", ..., "Egypt", ..., "Etc/GMT+3", ...
-        #  "Etc/Zulu", ... "US/Eastern", ... "UTC", ..., "Zulu"]
-        target = locale.lower()
-        best = None
-        for name in pytz.all_timezones:
-            normalized = name.lower().replace("_", " ").split("/") # E.g. "Australia/Sydney"
-            if len(normalized) == 1:
-                pct = fuzzy_match(normalized[0], target)
-            elif len(normalized) >= 2:
-                pct = fuzzy_match(normalized[1], target)                           # e.g. "Sydney"
-                pct2 = fuzzy_match(normalized[-2] + " " + normalized[-1], target)  # e.g. "Sydney Australia" or "Center North Dakota"
-                pct3 = fuzzy_match(normalized[-1] + " " + normalized[-2], target)  # e.g. "Australia Sydney"
-                pct = max(pct, pct2, pct3)
-            if not best or pct >= best[0]:
-                best = (pct, name)
-        if best and best[0] > 0.8:
-           # solid choice
-           return pytz.timezone(best[1])
-        if best and best[0] > 0.3:
-            # Convert to a better speakable version
-            say = re.sub(r"([a-z])([A-Z])", r"\g<1> \g<2>", best[1])  # e.g. EasterIsland  to "Easter Island"
-            say = say.replace("_", " ")  # e.g. "North_Dakota" to "North Dakota"
-            say = say.split("/")  # e.g. "America/North Dakota/Center" to ["America", "North Dakota", "Center"]
-            say.reverse()
-            say = " ".join(say)   # e.g.  "Center North Dakota America", or "Easter Island Chile"
-            if self.ask_yesno("did.you.mean.timezone", data={"zone_name": say}) == "yes":
-                return pytz.timezone(best[1])
+        # Use Geonames API as last resort
+        try:
+            location_data = self.geoname.call('searchJSON', {'q': str(locale)})['geonames'][0]
+            place = location_data['toponymName'] + ' ' + location_data['countryName']
+            timezone = self.geoname.call('timezoneJSON', {'lat':location_data['lat'], 'lng':location_data['lng']})
+            self.log.debug('get_timezone: Geonames API: ' + timezone['timezoneId'])
+            return (pytz.timezone(timezone['timezoneId']), place)
+        except:
+            pass
 
+        self.log.debug('get_timezone: Final Timezone: None')
         return None
 
     def get_local_datetime(self, location, dtUTC=None):
@@ -146,13 +131,14 @@ class TimeSkill(MycroftSkill):
             # User requested times be shown in some timezone
             tz = self.display_tz
         else:
-            tz = self.get_timezone(self.location_timezone)
+            tz = self.get_timezone(self.location_timezone)[0]
 
         if location:
-            tz = self.get_timezone(location)
-        if not tz:
-            self.speak_dialog("time.tz.not.found", {"location": location})
-            return None
+            try:
+                tz = self.get_timezone(location)[0]
+            except:
+                self.speak_dialog("time.tz.not.found", {"location": location})
+                return None
 
         return dtUTC.astimezone(tz)
 
@@ -322,7 +308,14 @@ class TimeSkill(MycroftSkill):
             return
 
         # speak it
-        self.speak_dialog("time.current", {"time": current_time})
+        if (location):
+            try:
+                timezone = self.get_timezone(location)[1]
+                self.speak_dialog("time.current.with.timezone", {"time": current_time, "timezone": timezone})
+            except:
+                self.speak_dialog("time.tz.not.found", {"location": location})
+        else:
+            self.speak_dialog("time.current", {"time": current_time})
 
         # and briefly show the time
         self.answering_query = True
@@ -377,7 +370,7 @@ class TimeSkill(MycroftSkill):
         utt = message.data.get('utterance', "")
         location = self._extract_location(utt)
         if location:
-            tz = self.get_timezone(location)
+            tz = self.get_timezone(location)[0]
             if not tz:
                 self.speak_dialog("time.tz.not.found", {"location": location})
                 return
