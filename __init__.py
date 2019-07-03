@@ -71,7 +71,7 @@ class TimeSkill(MycroftSkill):
     @resting_screen_handler('Time and Date')
     def handle_idle(self, message):
         self.gui.clear()
-        self.log.info('Activating Time/Date resting page')
+        self.log.debug('Activating Time/Date resting page')
         self.gui['time_string'] = self.get_display_current_time()
         self.gui['ampm_string'] = ''
         self.gui['date_string'] = self.get_display_date()
@@ -85,7 +85,7 @@ class TimeSkill(MycroftSkill):
         return self.config_core.get('time_format') == 'full'
 
     def get_timezone(self, locale):
-        self.log.debug('get_timezone: Initial Locale: ' + str(locale))
+        # self.log.debug('get_timezone: Initial Locale: ' + str(locale))
         try:
             # This handles codes like "America/Los_Angeles"
             self.log.debug('get_timezone: Final Timezone from PyTZ: ' + str(pytz.timezone(locale)))
@@ -333,10 +333,6 @@ class TimeSkill(MycroftSkill):
     def handle_current_time_simple(self, message):
         self.handle_query_time(message)
 
-    @intent_file_handler("what.time.is.it.intent")
-    def handle_query_current_time_padatious(self, message):
-        self.handle_query_time(message)
-
     @intent_file_handler("what.time.will.it.be.intent")
     def handle_query_future_time(self, message):
         utt = normalize(message.data.get('utterance', "").lower())
@@ -362,6 +358,11 @@ class TimeSkill(MycroftSkill):
         self.enclosure.activate_mouth_events()
         self.answering_query = False
         self.displayed_time = None
+
+    @intent_handler(IntentBuilder("future_time_handler_simple").
+                    require("Time").require("Future").optionally("Location"))
+    def handle_future_time_simple(self, message):
+        self.handle_query_future_time(message)
 
     @intent_handler(IntentBuilder("").require("Display").require("Time").
                     optionally("Location"))
