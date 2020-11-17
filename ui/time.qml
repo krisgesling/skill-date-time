@@ -13,7 +13,7 @@ Mycroft.Delegate {
     GridLayout {
         id: grid
         anchors.fill: parent
-        anchors.margins: parent.height * 0.10
+        anchors.margins: parent.height * 0.20
         columns: horizontalMode ? 3 : 1
 
         Item {
@@ -28,8 +28,8 @@ Mycroft.Delegate {
                 height: parent.height
                 font.capitalization: Font.AllUppercase
                 font.family: "Noto Sans"
-                font.bold: true
-                font.weight: Font.Bold
+                font.bold: false
+                font.weight: Font.Normal
                 font.pixelSize: horizontalMode ? parent.width : parent.height
                 horizontalAlignment: horizontalMode ? Text.AlignRight : Text.AlignHCenter
                 verticalAlignment: Text.AlignVCenter
@@ -63,8 +63,8 @@ Mycroft.Delegate {
                 font.capitalization: Font.AllUppercase
                 font.family: "Noto Sans"
                 font.bold: true
-                font.weight: Font.Normal
-                font.pixelSize: width
+                font.weight: Font.Bold
+                font.pixelSize: parent.width * 1.4
                 horizontalAlignment: Text.AlignHCenter
                 verticalAlignment: Text.AlignVCenter
                 text: ":"
